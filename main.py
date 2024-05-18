@@ -5,22 +5,8 @@ from PIL import Image
 import numpy as np
 from scipy.fft import dct, idct
 
-C = np.array([
-    [0.354, 0.354, 0.354, 0.354, 0.354, 0.354, 0.354, 0.354],
-    [0.490, 0.416, 0.278, 0.098, -0.098, -0.278, -0.416, -0.490],
-    [0.462, 0.191, -0.191, -0.462, -0.462, -0.191, 0.191, 0.462],
-    [0.416, -0.098, -0.490, -0.278, 0.278, 0.490, 0.098, -0.416],
-    [0.354, -0.354, -0.354, 0.354, 0.354, -0.354, -0.354, 0.354],
-    [0.278, -0.490, 0.098, 0.416, -0.416, -0.098, 0.490, -0.378],
-    [0.191, -0.462, 0.462, -0.191, -0.191, 0.462, -0.462, 0.191],
-    [0.098, -0.278, 0.416, -0.490, 0.490, -0.416, 0.278, -0.098]
-])
-
 
 def diagonal_traversal(matrix):
-    if not matrix or not matrix[0]:
-        return []
-
     rows, cols = len(matrix), len(matrix[0])
     result = []
     intermediate = []
@@ -50,6 +36,13 @@ def decrease_pixels(matrix: numpy.array) -> numpy.array:
     return matrix
 
 
+def increase_pixels(matrix: numpy.array) -> numpy.array:
+    for line in range(len(matrix)):
+        for row in range(len(matrix[line])):
+            matrix[line][row] += 128
+    return matrix
+
+
 def arnold_transformation(matrix) -> numpy.array:
     n = len(matrix)
     new_matrix = matrix.copy()
@@ -61,8 +54,8 @@ def arnold_transformation(matrix) -> numpy.array:
     return new_matrix
 
 
-def arnold_regeneration(matrix: numpy.array) -> numpy.array:
-    n, _ = matrix.shape
+def arnold_regeneration(matrix):
+    n = len(matrix)
     old_matrix = matrix.copy()
     for i in range(n):
         for j in range(n):
@@ -82,16 +75,6 @@ def get_bin_matrix_of_wm():
     return wm_bin_matrix
 
 
-# def split_8(matrix):
-#     n = len(matrix)
-#     arr = []
-#     for block_row in range(n // 8):
-#         for block_col in range(n // 8):
-#             arr.append([[matrix[i][j] for j in range(block_col * (n // 8), (block_col + 1) * (n // 8))]
-#                         for i in range(block_row * (n // 8), (block_row + 1) * (n // 8))])
-#     return arr
-
-
 def split_into_blocks_by_8(matrix):
     blocks = []
     for i in range(0, len(matrix), 8):
@@ -101,67 +84,118 @@ def split_into_blocks_by_8(matrix):
     return blocks
 
 
-# def merge_8(blocks):
-#     result = [[0 for _ in range(len(blocks[0]) * 8)] for _ in range(len(blocks[0]) * 8)]
-#     for ind in range(len(blocks)):
-#         block_row = ind // 8
-#         block_col = ind % 8
-#         block = blocks[ind]
-#         for i in range(block_row * 8, (block_row + 1) * 8):
-#             for j in range(block_col * 8, (block_col + 1) * 8):
-#                 result[i][j] = block[i - block_row * 8][j - block_col * 8]
-#     return result
-
-
 def merge_blocks_by_8(blocks):
-    block_count = len(blocks)
-    block_size = len(blocks[0])
-    dim = int((block_count * block_size) ** 0.5)
+    size = int(len(blocks) ** 0.5) * 8
+    matrix = [[0] * size for _ in range(size)]
 
-    matrix = [[0] * dim for _ in range(dim)]
-
-    for b in range(block_count):
-        for i in range(block_size):
-            for j in range(block_size):
-                row = b // (dim // block_size) * block_size + i
-                col = b % (dim // block_size) * block_size + j
-                matrix[row][col] = blocks[b][i][j]
+    for b in range(len(blocks)):
+        i_offset, j_offset = (b // (size // 8)) * 8, (b % (size // 8)) * 8
+        for i in range(8):
+            for j in range(8):
+                matrix[i_offset + i][j_offset + j] = blocks[b][i][j]
     return matrix
 
 
 def modification(block):
     z = 2
-    snaked = diagonal_traversal(block)
+    snaked = [i[1] for i in diagonal_traversal(block)]
     dc = snaked[0]
     med = sorted(snaked[1:10])[4]
-    return abs(z * ((dc - med) / dc)) if 1 <= abs(dc) <= 1000 else abs(z * med)
+    ans = abs(z * ((dc - med) / dc)) if 1 <= abs(dc) <= 1000 and abs(med - dc) > 0.0001 else abs(z * med)
+    # if ans < 0.0001:
+    #     print("ans is small!: ", z, dc, med)
+    return ans
 
 
 def insert(matrix: numpy.array) -> numpy.array:
+    T = 80
+    K = 12
     matrix = decrease_pixels(matrix)
     blocks = split_into_blocks_by_8(matrix)
-    wm_bits = arnold_transformation(get_bin_matrix_of_wm())
+    wm_bits = get_bin_matrix_of_wm()
     # print(blocks[0])
     # print(dct(blocks[0]))
     # print(blocks[0])
     for i in range(len(blocks)):
-        after_dct = dct(blocks[i])
-        M = modification(after_dct)
+        blocks[i] = dct(blocks[i])
+    for i in range(len(blocks)):
+        M = modification(blocks[i])
+        delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]  # green channel
+        if wm_bits[i // 64][i % 64] == 1:
+            if delta > T - K:
+                while delta > T - K:
+                    blocks[i][4][4][1] -= M
+                    delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
+            elif K > delta > - (T // 2):
+                # print(delta, K, T, blocks[i][4][4][1], blocks[(i + 1) % len(blocks)][4][4][1], M)
+                while delta < K:
+                    blocks[i][4][4][1] += M
+                    delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
+            elif delta < - (T // 2):
+                while delta > -T - K:
+                    blocks[i][4][4][1] -= M
+                    delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
+        elif wm_bits[i // 64][i % 64] == 0:
+            if delta > T // 2:
+                while delta <= T + K:
+                    blocks[i][4][4][1] += M
+                    delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
+            elif -K < delta < T // 2:
+                while delta >= -K:
+                    blocks[i][4][4][1] -= M
+                    delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
+            elif delta < K - T:
+                while delta <= K - T:
+                    blocks[i][4][4][1] += M
+                    delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
+    for block in range(len(blocks)):
+        blocks[block] = idct(blocks[block])
+        # print(blocks[i])
+        for i in range(len(blocks[block])):
+            for j in range(len(blocks[block][i])):
+                for channel in range(len(blocks[block][i][j])):
+                    blocks[block][i][j][channel] = np.round(blocks[block][i][j][channel])
+    new_matrix = increase_pixels(merge_blocks_by_8(blocks))
+    return new_matrix
 
 
-# m = get_bin_matrix_of_wm()
-# wm_img = Image.open("watermark.png")
-# m_new = np.array(wm_img)
-# for i in range(len(m)):
-#     for j in range(len(m[i])):
-#         m[i][j] = [255, 255, 255, 255] if m[i][j] else [0, 0, 0, 255]
-# Image.fromarray(np.array(m).astype("uint8")).save("watermark_bit.png")
-
+def extract(matrix: numpy.array) -> numpy.array:
+    T = 80
+    K = 12
+    matrix = decrease_pixels(matrix)
+    blocks = split_into_blocks_by_8(matrix)
+    wm_bits = []
+    for i in range(len(blocks)):
+        blocks[i] = dct(blocks[i])
+    for i in range(len(blocks)):
+        M = modification(blocks[i])
+        delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]  # green channel
+        wm_bits.append(1 if delta < -T or (0 < delta < T) else 0)
+    wm_matrix = [[0] * 64 for _ in range(64)]
+    for i in range(len(wm_bits)):
+        wm_matrix[i // 64][i % 64] = wm_bits[i]
+    # wm_matrix = arnold_regeneration(wm_matrix)
+    wm_matrix_img = [[0] * 64 for _ in range(64)]
+    for i in range(len(wm_matrix)):
+        for j in range(len(wm_matrix[i])):
+            if wm_matrix[i][j] == 1:
+                wm_matrix_img[i][j] = [255, 255, 255, 255]
+            else:
+                wm_matrix_img[i][j] = [0, 0, 0, 255]
+    out = np.array(wm_matrix_img).astype("uint8")
+    print(out)
+    return out
 
 # uint8
 
 
 if __name__ == '__main__':
-    img = Image.open("JasehOnfroyChild.png")
+    # img = Image.open("aga.png")
+    # img_matrix = np.array(img)
+    # new_img_matrix = insert(img_matrix)
+    # Image.fromarray(np.array(new_img_matrix).astype("uint8")).save("waterMarkedImage.png")
+
+    img = Image.open("aga.png")
     img_matrix = np.array(img)
-    insert(img_matrix)
+    wm = extract(img_matrix)
+    Image.fromarray(wm).save("waterMarkedImage_extracted.png")
