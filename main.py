@@ -4,6 +4,26 @@ import numpy
 from PIL import Image
 import numpy as np
 from scipy.fft import dct, idct
+import math
+
+
+def my_dct(matrix: np.array):
+    def Cf(var):
+        return 1 / (2 ** 0.5) if var == 0 else 1
+
+    dcp_array_prepared = [[0] * len(matrix[0]) for _ in range(len(matrix))]
+    dcp_array = [[0] * len(matrix[0]) for _ in range(len(matrix))]
+    for x in range(len(matrix)):
+        for y in range(len(matrix[0])):
+            dcp_array_prepared[x][y] = (matrix[x][y][1] - 128)  # 0 => 128
+    for i_i in range(8):
+        for j_i in range(8):
+            c = Cf(i_i) * Cf(j_i) / 4 / 1
+            for x in range(8):
+                for y in range(8):
+                    dcp_array[i_i][j_i] += c * math.cos((2 * x + 1) * i_i * math.pi / 16) * math.cos(
+                        (2 * y + 1) * j_i * math.pi / 16) * dcp_array_prepared[x][y]
+    return dcp_array
 
 
 def diagonal_traversal(matrix):
@@ -30,17 +50,23 @@ def diagonal_traversal(matrix):
 
 
 def decrease_pixels(matrix: numpy.array) -> numpy.array:
-    for line in range(len(matrix)):
-        for row in range(len(matrix[line])):
-            matrix[line][row] -= 128
-    return matrix
+    m_1 = matrix.copy()
+
+    for line in range(len(m_1)):
+        for row in range(len(m_1[line])):
+            for channel in range(len(m_1[line][row])):
+                m_1[line][row][channel] -= 128
+    return m_1
 
 
 def increase_pixels(matrix: numpy.array) -> numpy.array:
-    for line in range(len(matrix)):
-        for row in range(len(matrix[line])):
-            matrix[line][row] += 128
-    return matrix
+    m_1 = matrix.copy()
+
+    for line in range(len(m_1)):
+        for row in range(len(m_1[line])):
+            for channel in range(len(m_1[line][row])):
+                m_1[line][row][channel] += 128
+    return m_1
 
 
 def arnold_transformation(matrix) -> numpy.array:
@@ -101,10 +127,14 @@ def modification(block):
     snaked = [i[1] for i in diagonal_traversal(block)]
     dc = snaked[0]
     med = sorted(snaked[1:10])[4]
-    ans = abs(z * ((dc - med) / dc)) if 1 <= abs(dc) <= 1000 and abs(med - dc) > 0.0001 else abs(z * med)
+    ans = abs(z * ((dc - med) / dc)) if 1 <= abs(dc) <= 1000 else abs(z * med)
     # if ans < 0.0001:
     #     print("ans is small!: ", z, dc, med)
     return ans
+
+
+def save_block(block):
+    Image.fromarray(np.array(block).astype("uint8")).save("block.png")
 
 
 def insert(matrix: numpy.array) -> numpy.array:
@@ -116,47 +146,58 @@ def insert(matrix: numpy.array) -> numpy.array:
     # print(blocks[0])
     # print(dct(blocks[0]))
     # print(blocks[0])
+
+    # save_block(increase_pixels(blocks[15]))
     for i in range(len(blocks)):
         blocks[i] = dct(blocks[i])
-    for i in range(len(blocks)):
-        M = modification(blocks[i])
-        delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]  # green channel
-        if wm_bits[i // 64][i % 64] == 1:
-            if delta > T - K:
-                while delta > T - K:
-                    blocks[i][4][4][1] -= M
-                    delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
-            elif K > delta > - (T // 2):
-                # print(delta, K, T, blocks[i][4][4][1], blocks[(i + 1) % len(blocks)][4][4][1], M)
-                while delta < K:
-                    blocks[i][4][4][1] += M
-                    delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
-            elif delta < - (T // 2):
-                while delta > -T - K:
-                    blocks[i][4][4][1] -= M
-                    delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
-        elif wm_bits[i // 64][i % 64] == 0:
-            if delta > T // 2:
-                while delta <= T + K:
-                    blocks[i][4][4][1] += M
-                    delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
-            elif -K < delta < T // 2:
-                while delta >= -K:
-                    blocks[i][4][4][1] -= M
-                    delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
-            elif delta < K - T:
-                while delta <= K - T:
-                    blocks[i][4][4][1] += M
-                    delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
-    for block in range(len(blocks)):
-        blocks[block] = idct(blocks[block])
-        # print(blocks[i])
-        for i in range(len(blocks[block])):
-            for j in range(len(blocks[block][i])):
-                for channel in range(len(blocks[block][i][j])):
-                    blocks[block][i][j][channel] = np.round(blocks[block][i][j][channel])
-    new_matrix = increase_pixels(merge_blocks_by_8(blocks))
-    return new_matrix
+    for line in blocks[0]:
+        for px in line:
+            print(px[1], end='\t')
+        print()
+    # for i in range(len(blocks)):
+    #     M = modification(blocks[i])
+    #     # if M < 0.00001:
+    #     #     print(i // 64, i % 64)
+    #     #     continue
+    #     delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]  # green channel
+    #     if wm_bits[i // 64][i % 64] == 1:
+    #         if delta > T - K:
+    #             while delta > T - K:
+    #                 blocks[i][4][4][1] -= M
+    #                 delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
+    #         elif K > delta > - (T // 2):
+    #             # print(delta, K, T, blocks[i][4][4][1], blocks[(i + 1) % len(blocks)][4][4][1], M)
+    #             if abs(M) < 0.0001:
+    #                 print('M == 0 in', i, 'block')
+    #             while delta < K:
+    #                 blocks[i][4][4][1] += M
+    #                 delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
+    #         elif delta < - (T // 2):
+    #             while delta > -T - K:
+    #                 blocks[i][4][4][1] -= M
+    #                 delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
+    #     elif wm_bits[i // 64][i % 64] == 0:
+    #         if delta > T // 2:
+    #             while delta <= T + K:
+    #                 blocks[i][4][4][1] += M
+    #                 delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
+    #         elif -K < delta < T // 2:
+    #             while delta >= -K:
+    #                 blocks[i][4][4][1] -= M
+    #                 delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
+    #         elif delta < K - T:
+    #             while delta <= K - T:
+    #                 blocks[i][4][4][1] += M
+    #                 delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
+    # for block in range(len(blocks)):
+    #     blocks[block] = idct(blocks[block])
+    #     # print(blocks[i])
+    #     for i in range(len(blocks[block])):
+    #         for j in range(len(blocks[block][i])):
+    #             for channel in range(len(blocks[block][i][j])):
+    #                 blocks[block][i][j][channel] = np.round(blocks[block][i][j][channel])
+    # new_matrix = increase_pixels(merge_blocks_by_8(blocks))
+    # return new_matrix
 
 
 def extract(matrix: numpy.array) -> numpy.array:
@@ -165,6 +206,7 @@ def extract(matrix: numpy.array) -> numpy.array:
     matrix = decrease_pixels(matrix)
     blocks = split_into_blocks_by_8(matrix)
     wm_bits = []
+
     for i in range(len(blocks)):
         blocks[i] = dct(blocks[i])
     for i in range(len(blocks)):
@@ -183,19 +225,40 @@ def extract(matrix: numpy.array) -> numpy.array:
             else:
                 wm_matrix_img[i][j] = [0, 0, 0, 255]
     out = np.array(wm_matrix_img).astype("uint8")
-    print(out)
     return out
+
 
 # uint8
 
+img = Image.open("1.png")
+img_matrix = np.array(img)
+
+new_matrix = []
+for i in range(8):
+    new_matrix.append(img_matrix[i][:8])
+img_matrix = np.array(new_matrix)
+
+print(my_dct(img_matrix))
+
+img_matrix = decrease_pixels(img_matrix)  # -128
+img_matrix = dct(img_matrix)
+for line in img_matrix:
+    for px in line:
+        print(px[1], end='\t')
+    print()
+print()
+
+
 
 if __name__ == '__main__':
-    # img = Image.open("aga.png")
-    # img_matrix = np.array(img)
-    # new_img_matrix = insert(img_matrix)
-    # Image.fromarray(np.array(new_img_matrix).astype("uint8")).save("waterMarkedImage.png")
-
-    img = Image.open("aga.png")
-    img_matrix = np.array(img)
-    wm = extract(img_matrix)
-    Image.fromarray(wm).save("waterMarkedImage_extracted.png")
+    mode = input("Enter the mode: embed or ex [em/ex]:\n")
+    if mode == "em":
+        img = Image.open("1.png")
+        img_matrix = np.array(img)
+        new_img_matrix = insert(img_matrix)
+        Image.fromarray(np.array(new_img_matrix).astype("uint8")).save("waterMarkedImage.png")
+    else:
+        img = Image.open("1.png")
+        img_matrix = np.array(img)
+        wm = extract(img_matrix)
+        Image.fromarray(wm).save("waterMarkedImage_extracted.png")
