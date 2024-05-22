@@ -28,7 +28,7 @@ def Input():
             string = input("String message of watermark: ")
             destination = input("Output image destination: ")
             wtr_dest = input("Watermark image destination: ")
-            channel = 1
+            channel = 0
             count = 0
             img_array = np.array(image)
             dcp_array_prepared = [[0] * len(img_array[0]) for _ in range(len(img_array))]
@@ -57,7 +57,7 @@ def Input():
             """"Здесь конец ДКП"""
         # print("Ended dcp")
             for i in range(0, len(dcp_array), 8):
-                for j in range(len(dcp_array[0]) - 16, -1, -8):
+                for j in range(0, len(dcp_array[0]) - 15, 8):
                     if count < len(string):
                         Med_finder = \
                             [dcp_array[i][j + 3], dcp_array[i][j + 1], dcp_array[i][j + 2], dcp_array[i + 1][j],

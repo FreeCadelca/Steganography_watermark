@@ -339,7 +339,17 @@ def extract(matrix: numpy.array) -> numpy.array:
 
 
 # uint8
-print(get_bin_str_of_wm())
+# print(get_bin_str_of_wm())
+
+img = Image.open("JasehOnfroyChild.png")
+img_matrix = np.array(img)
+img_matrix = dct(dct(img_matrix, axis=0, norm='ortho'), axis=1, norm='ortho')
+
+for line in blocks[0]:
+    for px in line:
+        print(px[1], end='\t')
+    print()
+
 if __name__ == '__main__':
     mode = input("Enter the mode: embed or ex [em/ex]:\n")
     if mode == "em":
