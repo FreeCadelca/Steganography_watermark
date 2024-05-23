@@ -1,10 +1,13 @@
 import pprint
+import sys
 
 import numpy
 from PIL import Image
 import numpy as np
 from scipy.fft import dct, idct
 import math
+
+count_of_small_m = 0
 
 
 def my_dct_by_blocks(matrix):
@@ -13,8 +16,8 @@ def my_dct_by_blocks(matrix):
 
     dcp_matrix = [[[0, 0, 0] for j in range(len(matrix[i]))] for i in range(len(matrix))]
 
-    for block_start_i in range(0, len(dcp_matrix), 8):
-        for block_start_j in range(0, len(dcp_matrix[block_start_i]) - 8, 8):
+    for block_start_i in range(0, len(matrix), 8):
+        for block_start_j in range(0, len(matrix[0]) - 8, 8):
             for i_in_block in range(8):
                 for j_in_block in range(8):
                     for channel in range(3):
@@ -45,7 +48,7 @@ def my_idct_by_blocks(matrix):
 
     new_matrix = [[[0, 0, 0] for _ in range(len(matrix[i]))] for i in range(len(matrix))]
     for block_start_i in range(0, len(dcp_array), 8):
-        for block_start_j in range(len(dcp_array[0]) - 16, -1, -8):
+        for block_start_j in range(0, len(dcp_array[0]) - 8, 8):
             for i_in_block in range(8):
                 for j_in_block in range(8):
                     for channel in range(3):
@@ -57,6 +60,38 @@ def my_idct_by_blocks(matrix):
                                         math.cos((2 * i_in_block + 1) * u * math.pi / 16) *
                                         math.cos((2 * j_in_block + 1) * v * math.pi / 16))
     return np.array(new_matrix)
+
+
+def my_dct_full_matrix(matrix):
+    new_matrix = [[[0, 0, 0] for _ in range(len(matrix[i]))] for i in range(len(matrix))]
+    for block_start_i in range(0, len(matrix), 8):
+        for block_start_j in range(0, len(matrix[0]), 8):
+            for channel in range(3):
+                block = [[0] * 8 for _ in range(8)]
+                for i in range(8):
+                    for j in range(8):
+                        block[i][j] = matrix[block_start_i + i][block_start_j + j][channel]
+                block = dct(dct(block, axis=0, norm='ortho'), axis=1, norm='ortho')
+                for i in range(8):
+                    for j in range(8):
+                        new_matrix[block_start_i + i][block_start_j + j][channel] = block[i][j]
+    return new_matrix
+
+
+def my_idct_full_matrix(matrix):
+    new_matrix = [[[0, 0, 0] for _ in range(len(matrix[i]))] for i in range(len(matrix))]
+    for block_start_i in range(0, len(matrix), 8):
+        for block_start_j in range(0, len(matrix[0]), 8):
+            for channel in range(3):
+                block = [[0] * 8 for _ in range(8)]
+                for i in range(8):
+                    for j in range(8):
+                        block[i][j] = matrix[block_start_i + i][block_start_j + j][channel]
+                block = idct(idct(block, axis=0, norm='ortho'), axis=1, norm='ortho')
+                for i in range(8):
+                    for j in range(8):
+                        new_matrix[block_start_i + i][block_start_j + j][channel] = block[i][j]
+    return new_matrix
 
 
 def diagonal_traversal(matrix):
@@ -179,13 +214,19 @@ def new_modification(matrix, left_index_of_block, top_index_of_block, channel=1)
     z = 2
     dc = matrix[i][j][channel]
     ac9 = [matrix[i][j + 3][channel], matrix[i][j + 1][channel], matrix[i][j + 2][channel],
-                  matrix[i + 1][j][channel], matrix[i + 1][j + 1][channel], matrix[i + 1][j + 2][channel],
-                  matrix[i + 2][j][channel], matrix[i + 2][j + 1][channel], matrix[i + 3][j][channel]]
+           matrix[i + 1][j][channel], matrix[i + 1][j + 1][channel], matrix[i + 1][j + 2][channel],
+           matrix[i + 2][j][channel], matrix[i + 2][j + 1][channel], matrix[i + 3][j][channel]]
     med = sorted(ac9)[4]
-    M = z * abs(med) if abs(dc) > 1000 or abs(dc) < 1 else z * abs((matrix[i][j][channel] - med) / matrix[i][j][channel])
+    M = z * abs(med) if abs(dc) > 1000 or abs(dc) < 1 else z * abs(
+        (matrix[i][j][channel] - med) / matrix[i][j][channel])
+    # if M < 0.0000001:
+    #     M *= 10 ** math.ceil(math.log10(0.00001 / M))
     if M < 0.0000001:
-        M *= 10 ** math.ceil(math.log10(0.00001 / M))
+        M = 0.0001
+        global count_of_small_m
+        count_of_small_m += 1
     return M
+
 
 def save_block(block):
     Image.fromarray(np.array(block).astype("uint8")).save("block.png")
@@ -203,7 +244,7 @@ def insert(matrix: numpy.array) -> numpy.array:
     # print(blocks[0])
 
     print("started dcp")
-    matrix_after_dct = my_dct_by_blocks(matrix)
+    matrix_after_dct = my_dct_full_matrix(matrix)
     print("dcp finished, started embedding")
 
     # for i in range(len(blocks)):
@@ -218,93 +259,51 @@ def insert(matrix: numpy.array) -> numpy.array:
     #     for px in line:
     #         print(px[1], end='\t')
     #     print()
-
-    # print("started embedding")
+    n = len(matrix_after_dct[0])
     for block_start_i in range(0, len(matrix_after_dct), 8):
-        for block_start_j in range(len(matrix_after_dct[block_start_i]) - 16, -1, -8):
+        for block_start_j in range(0, len(matrix_after_dct[block_start_i]), 8):
+            if block_start_j == len(matrix_after_dct[block_start_i]) - 8:
+                index_of_px_in_wm += 1
+                continue
             M = new_modification(matrix_after_dct, block_start_i, block_start_j)
-            delta = (matrix_after_dct[block_start_i + 3][block_start_j + 2][1] -
-                     matrix_after_dct[block_start_i + 3][block_start_j + 10][1])
+            delta = (matrix_after_dct[block_start_i + 4][block_start_j + 4][1] -
+                     matrix_after_dct[block_start_i + 4][(block_start_j + 4 + 8) % n][1])
             if wm_bits[index_of_px_in_wm] == 1:
                 if delta > T - K:
                     while delta > T - K:
-                        matrix_after_dct[block_start_i + 3][block_start_j + 2][1] -= M
-                        delta = (matrix_after_dct[block_start_i + 3][block_start_j + 2][1] -
-                                 matrix_after_dct[block_start_i + 3][block_start_j + 10][1])
+                        matrix_after_dct[block_start_i + 4][block_start_j + 4][1] -= M
+                        delta = (matrix_after_dct[block_start_i + 4][block_start_j + 4][1] -
+                                 matrix_after_dct[block_start_i + 4][(block_start_j + 4 + 8) % n][1])
                 elif K > delta > -1 * T / 2:
                     while delta < K:
-                        matrix_after_dct[block_start_i + 3][block_start_j + 2][1] += M
-                        delta = (matrix_after_dct[block_start_i + 3][block_start_j + 2][1] -
-                                 matrix_after_dct[block_start_i + 3][block_start_j + 10][1])
+                        matrix_after_dct[block_start_i + 4][block_start_j + 4][1] += M
+                        delta = (matrix_after_dct[block_start_i + 4][block_start_j + 4][1] -
+                                 matrix_after_dct[block_start_i + 4][(block_start_j + 4 + 8) % n][1])
                 elif delta < -1 * T / 2:
                     while delta > 0 - T - K:
-                        matrix_after_dct[block_start_i + 3][block_start_j + 2][1] -= M
-                        delta = (matrix_after_dct[block_start_i + 3][block_start_j + 2][1] -
-                                 matrix_after_dct[block_start_i + 3][block_start_j + 10][1])
-
+                        matrix_after_dct[block_start_i + 4][block_start_j + 4][1] -= M
+                        delta = (matrix_after_dct[block_start_i + 4][block_start_j + 4][1] -
+                                 matrix_after_dct[block_start_i + 4][(block_start_j + 4 + 8) % n][1])
             if wm_bits[index_of_px_in_wm] == 0:
                 if delta > T / 2:
                     while delta <= T + K:
-                        matrix_after_dct[block_start_i + 3][block_start_j + 2][1] += M
-                        delta = (matrix_after_dct[block_start_i + 3][block_start_j + 2][1] -
-                                 matrix_after_dct[block_start_i + 3][block_start_j + 10][1])
+                        matrix_after_dct[block_start_i + 4][block_start_j + 4][1] += M
+                        delta = (matrix_after_dct[block_start_i + 4][block_start_j + 4][1] -
+                                 matrix_after_dct[block_start_i + 4][(block_start_j + 4 + 8) % n][1])
                 elif -1 * K < delta < T / 2:
                     while delta >= -1 * K:
-                        matrix_after_dct[block_start_i + 3][block_start_j + 2][1] -= M
-                        delta = (matrix_after_dct[block_start_i + 3][block_start_j + 2][1] -
-                                 matrix_after_dct[block_start_i + 3][block_start_j + 10][1])
+                        matrix_after_dct[block_start_i + 4][block_start_j + 4][1] -= M
+                        delta = (matrix_after_dct[block_start_i + 4][block_start_j + 4][1] -
+                                 matrix_after_dct[block_start_i + 4][(block_start_j + 4 + 8) % n][1])
                 elif delta < K - T:
                     while delta <= K - T:
-                        matrix_after_dct[block_start_i + 3][block_start_j + 2][1] += M
-                        delta = (matrix_after_dct[block_start_i + 3][block_start_j + 2][1] -
-                                 matrix_after_dct[block_start_i + 3][block_start_j + 10][1])
+                        matrix_after_dct[block_start_i + 4][block_start_j + 4][1] += M
+                        delta = (matrix_after_dct[block_start_i + 4][block_start_j + 4][1] -
+                                 matrix_after_dct[block_start_i + 4][(block_start_j + 4 + 8) % n][1])
             index_of_px_in_wm += 1
     print("embedding finished")
-    # for i in range(len(blocks)):
-    #     M = modification(blocks[i])
-    #     # if M < 0.00001:
-    #     #     print(i // 64, i % 64)
-    #     #     continue
-    #     delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]  # green channel
-    #     if wm_bits[i // 64][i % 64] == 1:
-    #         if delta > T - K:
-    #             while delta > T - K:
-    #                 blocks[i][4][4][1] -= M
-    #                 delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
-    #         elif K > delta > - (T // 2):
-    #             # print(delta, K, T, blocks[i][4][4][1], blocks[(i + 1) % len(blocks)][4][4][1], M)
-    #             if abs(M) < 0.0001:
-    #                 print('M == 0 in', i, 'block')
-    #             while delta < K:
-    #                 blocks[i][4][4][1] += M
-    #                 delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
-    #         elif delta < - (T // 2):
-    #             while delta > -T - K:
-    #                 blocks[i][4][4][1] -= M
-    #                 delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
-    #     elif wm_bits[i // 64][i % 64] == 0:
-    #         if delta > T // 2:
-    #             while delta <= T + K:
-    #                 blocks[i][4][4][1] += M
-    #                 delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
-    #         elif -K < delta < T // 2:
-    #             while delta >= -K:
-    #                 blocks[i][4][4][1] -= M
-    #                 delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
-    #         elif delta < K - T:
-    #             while delta <= K - T:
-    #                 blocks[i][4][4][1] += M
-    #                 delta = blocks[i][4][4][1] - blocks[(i + 1) % len(blocks)][4][4][1]
 
-    # for block in range(len(blocks)):
-    #     blocks[block] = my_idct(blocks[block])
-    #     # print(blocks[i])
-    #     for i in range(len(blocks[block])):
-    #         for j in range(len(blocks[block][i])):
-    #             for channel in range(len(blocks[block][i][j])):
-    #                 blocks[block][i][j][channel] = np.round(blocks[block][i][j][channel])
-
-    new_matrix = increase_pixels(my_idct_by_blocks(matrix_after_dct))
+    new_matrix = increase_pixels(my_idct_full_matrix(matrix_after_dct))
 
     # new_matrix = increase_pixels(merge_blocks_by_8(blocks))
     return new_matrix
@@ -338,17 +337,43 @@ def extract(matrix: numpy.array) -> numpy.array:
     return out
 
 
+def extract_new(matrix):
+    T = 80
+    K = 12
+    matrix = decrease_pixels(matrix)
+    matrix_after_dct = my_dct_full_matrix(matrix)
+
+    wm_bits = []
+    n = len(matrix_after_dct[0])
+    for block_start_i in range(0, len(matrix_after_dct), 8):
+        for block_start_j in range(0, len(matrix_after_dct[block_start_i]), 8):
+            delta = (matrix_after_dct[block_start_i + 4][block_start_j + 4][1] -
+                     matrix_after_dct[block_start_i + 4][(block_start_j + 4 + 8) % n][1])
+            wm_bits.append(1 if delta < -T or (0 < delta < T) else 0)
+
+    wm_matrix = [[0] * 64 for _ in range(64)]
+    for i in range(len(wm_bits)):
+        wm_matrix[i // 64][i % 64] = wm_bits[i]
+    # wm_matrix = arnold_regeneration(wm_matrix)
+    wm_matrix_img = [[0] * 64 for _ in range(64)]
+    for i in range(len(wm_matrix)):
+        for j in range(len(wm_matrix[i])):
+            if wm_matrix[i][j] == 1:
+                wm_matrix_img[i][j] = [255, 255, 255, 255]
+            else:
+                wm_matrix_img[i][j] = [0, 0, 0, 255]
+    out = np.array(wm_matrix_img).astype("uint8")
+    return out
+
+
 # uint8
 # print(get_bin_str_of_wm())
 
-img = Image.open("JasehOnfroyChild.png")
-img_matrix = np.array(img)
-img_matrix = dct(dct(img_matrix, axis=0, norm='ortho'), axis=1, norm='ortho')
-
-for line in blocks[0]:
-    for px in line:
-        print(px[1], end='\t')
-    print()
+# img = Image.open("JasehOnfroyChild.png")
+# img_matrix = np.array(img)
+# d = dct(dct(img_matrix, axis=0, norm='ortho'), axis=1, norm='ortho')
+# after_shake = idct(idct(d, axis=0, norm='ortho'), axis=1, norm='ortho')
+# Image.fromarray(np.array(after_shake).astype("uint8")).save("AferShake.png")
 
 if __name__ == '__main__':
     mode = input("Enter the mode: embed or ex [em/ex]:\n")
@@ -357,8 +382,9 @@ if __name__ == '__main__':
         img_matrix = np.array(img)
         new_img_matrix = insert(img_matrix)
         Image.fromarray(np.array(new_img_matrix).astype("uint8")).save("waterMarkedImage.png")
+        print(f'Small m: {count_of_small_m}')
     else:
         img = Image.open("JasehOnfroyChild.png")
         img_matrix = np.array(img)
-        wm = extract(img_matrix)
+        wm = extract_new(img_matrix)
         Image.fromarray(wm).save("waterMarkedImage_extracted.png")
