@@ -31,6 +31,14 @@ def arnold_regeneration(matrix):
     return old_matrix
 
 
+def apply_arnold(wm_bits, is_regeneration=False):
+    size = int(np.sqrt(len(wm_bits)))
+    wm_bits_2d = np.reshape(wm_bits, (size, size))
+    transformed_2d = arnold_regeneration(wm_bits_2d) if is_regeneration else arnold_transformation(wm_bits_2d)
+    transformed_1d = transformed_2d.flatten()
+    return transformed_1d
+
+
 def get_bin_str_of_wm(path):
     wm_image = Image.open(path)
     wm_matrix = np.array(wm_image)
@@ -56,6 +64,8 @@ def modification(block):
 
 
 def embed(matrix: np.array, wm_bits):
+    wm_bits = ''.join(map(str, apply_arnold(list(map(int, wm_bits)))))
+
     old_matrix = matrix.copy()
     width, height = matrix.shape[1], matrix.shape[0]
     num_blocks_x = width // 8
@@ -67,8 +77,8 @@ def embed(matrix: np.array, wm_bits):
             block_dct = dct(dct(block, axis=0, norm='ortho'), axis=1, norm='ortho')
             M = modification(block_dct)
             if block_j < num_blocks_x - 1:
-                neighbor_block = [[matrix[block_i * 8 + i][block_j * 8 + j + 8][1] - 128 for j in range(8)] for i in
-                                  range(8)]
+                neighbor_block = [[matrix[block_i * 8 + i][block_j * 8 + j + 8][1] - 128 for j in range(8)]
+                                  for i in range(8)]
                 neighbor_block_dct = dct(dct(neighbor_block, axis=0, norm='ortho'), axis=1, norm='ortho')
                 if index_of_px_in_wm < len(wm_bits):
                     watermark_bit = int(wm_bits[index_of_px_in_wm])
@@ -140,6 +150,8 @@ def extract(matrix, path_of_old_wm):
             block_dct = dct(dct(block, axis=0, norm='ortho'), axis=1, norm='ortho')
             delta = block_dct[4][4]
             wm_bits.append(1 if delta < -T or (0 < delta < T) else 0)
+    wm_bits += [1] * num_blocks_x
+    wm_bits = apply_arnold(wm_bits, is_regeneration=True)
 
     # Creating matrix of wm
     wm_matrix = [[0] * 64 for _ in range(64)]
