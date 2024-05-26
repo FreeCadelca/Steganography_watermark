@@ -206,3 +206,11 @@ if __name__ == '__main__':
 # JasehOnfroyChild.png
 # watermark.png
 # waterMarkedImage.png
+# waterMarkedImage_shrinked_quality20.jpg
+# waterMarkedImage_shrinked_quality80.jpg
+# waterMarkedImage_shrinked_quality100.jpg
+# waterMarkedImage_lighted_up.png
+# waterMarkedImage_contrast_up.png
+# waterMarkedImage_contrast_down.png
+# waterMarkedImage_hyper_filtered.png
+
